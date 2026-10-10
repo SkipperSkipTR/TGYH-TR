@@ -53,12 +53,51 @@ WINEDLLOVERRIDES="winhttp=n,b" %command%
 
 ### macOS (deneysel)
 
-Aynı betik macOS sürümünde de çalışır; oyun klasörü olarak oyunun `.app` dosyasının bulunduğu
-klasörü verin. Kurulumdan sonra oyunu aynı klasördeki `run_bepinex.sh` betiğiyle başlatmanız
-gerekir. Apple Silicon işlemcili Mac'lerde oyun Rosetta üzerinden çalışır.
+> Bu yöntem oyunun macOS dosyaları üzerinde incelendi, ancak **gerçek bir Mac'te henüz
+> denenmedi**. Denerseniz sonucu bildirmeniz çok yardımcı olur.
 
-Bu yol oyunun macOS dosyaları üzerinde incelendi, ancak **gerçek bir Mac'te henüz
-denenmedi**. Denerseniz sonucu bildirmeniz çok yardımcı olur.
+**1. Oyun klasörünü bulun.** Aradığınız klasör, içinde `Thank Goodness You're Here!.app`
+dosyası olan klasördür. Genellikle şuradadır:
+
+- Steam: `~/Library/Application Support/Steam/steamapps/common/Thank Goodness You're Here!`
+- Epic Games: `/Users/Shared/Epic Games/ThankGoodnessYoureHere`
+
+**2. Apple Silicon (M1 ve sonrası) kullanıyorsanız Rosetta'yı kurun.** Yama oyunu Rosetta
+üzerinden çalıştırır. Terminal'i açıp şu komutu bir kez çalıştırın (Intel Mac'lerde bu adımı
+atlayın):
+
+```bash
+softwareupdate --install-rosetta
+```
+
+**3. Yamayı kurun.** Terminal'de aşağıdaki iki komutu çalıştırın; ikinci komuttaki yolu kendi
+oyun klasörünüzle değiştirin:
+
+```bash
+curl -LO https://raw.githubusercontent.com/SkipperSkipTR/TGYH-TR/main/install.sh
+bash install.sh "/Users/Shared/Epic Games/ThankGoodnessYoureHere"
+```
+
+**4. Oyunu `run_bepinex.sh` ile başlatın.** Kurulum, oyun klasörüne `run_bepinex.sh` adında
+bir başlatıcı koyar. Yama yalnızca oyun bu başlatıcıyla açıldığında çalışır; oyunu doğrudan
+simgesinden ya da mağaza uygulamasından açarsanız İngilizce açılır.
+
+- **Terminal'den:**
+
+  ```bash
+  cd "/Users/Shared/Epic Games/ThankGoodnessYoureHere"
+  ./run_bepinex.sh
+  ```
+
+- **Steam'den:** Oyuna sağ tıklayıp *Özellikler > Başlatma Seçenekleri* alanına, yolu kendi
+  oyun klasörünüze göre düzelterek şunu yazın. Bundan sonra oyunu Steam'den her zamanki gibi
+  başlatabilirsiniz:
+
+  ```
+  "/Users/<kullanıcı adınız>/Library/Application Support/Steam/steamapps/common/Thank Goodness You're Here!/run_bepinex.sh" %command%
+  ```
+
+İlk açılış 1-2 dakika sürebilir.
 
 ### Elle kurulum
 
