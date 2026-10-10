@@ -112,10 +112,19 @@ builds.bepinex.dev, choosing win-x86, win-x64 or macos-x64 to match the game.
 
 Sprite atlases are named `sactx-…-<hash>`, and the hash differs between builds even when the
 atlas is pixel-identical; the macOS build, for example, shares only 3 of 90 names with
-Windows. `python tools/build_texture_aliases.py "<other build>"` compares the two builds and
-writes `textures/aliases.txt` (`<name in the other build>` TAB `<texture file>`), which the
-plugin reads and `build_release.py` ships. Run it once per build you want to support.
+Windows. One package still serves every build, because the plugin recognises atlases by
+picture:
 
-Prebuilt textures only fit the exact textures they were built against. After a game update,
-build the release again on the updated game; where a texture changed size or format the
-plugin logs a warning and leaves the original in place.
+- `build_texture_pack.py` stores a small fingerprint of each **original** atlas in
+  `textures/signatures.txt` (alpha and green on a 32x32 grid).
+- When the game loads an atlas whose name matches a replacement except for the hash, the
+  plugin takes the same fingerprint from the loaded texture on the GPU. If it agrees, the
+  replacement is used; if the atlas was repacked into a different layout, it is left alone
+  and the log says so.
+
+Nothing has to be generated per build. While editing with PNGs, run
+`python tools/build_texture_pack.py --signatures` to (re)write `signatures.txt` next to them.
+
+A replacement still needs the atlas to have the same size, format and layout as the one it
+was made from. After a game update that repacks atlases, build the release again on the
+updated game; textures that no longer fit are skipped with a log message.

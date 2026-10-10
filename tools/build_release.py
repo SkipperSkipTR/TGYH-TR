@@ -87,10 +87,6 @@ def main():
     print("== Encoding textures")
     if build_texture_pack.build(os.path.join(plugin_out, "textures")) != 0:
         sys.exit("Texture pack failed; release not finished.")
-    # Names the same atlases go by in other builds of the game (see build_texture_aliases.py).
-    aliases = os.path.join(INSTALLED, "textures", "aliases.txt")
-    if os.path.isfile(aliases):
-        shutil.copy2(aliases, os.path.join(plugin_out, "textures"))
 
     print("== Zipping")
     archive = shutil.make_archive(stage, "zip", stage)

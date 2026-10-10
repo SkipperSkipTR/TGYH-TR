@@ -44,6 +44,11 @@ namespace TGYHTurkishPatch
         // IL2CPP object pointers already checked and found to have no replacement.
         private static readonly HashSet<IntPtr> _rejected = new HashSet<IntPtr>();
         private static readonly List<IntPtr> _scratch = new List<IntPtr>();
+        // Atlas names resolved (or ruled out) by picture this session: name -> replacement key.
+        private static readonly Dictionary<string, string> _fingerprintMatches =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> _fingerprintMisses =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Stopwatch _clock = Stopwatch.StartNew();
 
         private static string _texturesDirectory;
@@ -132,40 +137,6 @@ namespace TGYHTurkishPatch
         }
 
         /// <summary>
-        /// Other builds of the game (macOS, other stores) give the same sprite atlas a different
-        /// hash suffix. aliases.txt lists "&lt;name in that build&gt; TAB &lt;texture file here&gt;" so
-        /// one set of files serves them all. Written by tools/build_texture_aliases.py.
-        /// </summary>
-        private static int LoadAliases(string file)
-        {
-            if (!File.Exists(file)) return 0;
-            int added = 0;
-            try
-            {
-                foreach (var raw in File.ReadAllLines(file))
-                {
-                    string line = raw.Trim();
-                    int tab = line.IndexOf('\t');
-                    if (line.Length == 0 || line[0] == '#' || tab <= 0) continue;
-
-                    string alias = NormalizeName(line.Substring(0, tab));
-                    string target = NormalizeName(line.Substring(tab + 1));
-                    if (alias.Length == 0 || _replacementPngPaths.ContainsKey(alias)) continue;
-                    if (_replacementPngPaths.TryGetValue(target, out string path))
-                    {
-                        _replacementPngPaths[alias] = path;
-                        added++;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LocalizationPlugin.Log.LogWarning($"[TEXTURE] Could not read aliases.txt: {ex.Message}");
-            }
-            return added;
-        }
-
-        /// <summary>
         /// (Re)builds the name -> PNG index. Only file names are read here; safe to call from
         /// plugin Load() and again for a hot reload.
         /// </summary>
@@ -191,6 +162,7 @@ namespace TGYHTurkishPatch
 
             TextureLoadQueue.CancelAll();
             _replacementPngPaths.Clear();
+            _fingerprintMisses.Clear();
 
             if (Directory.Exists(directory))
             {
@@ -225,9 +197,19 @@ namespace TGYHTurkishPatch
                     }
                 }
 
-                int aliases = LoadAliases(Path.Combine(directory, "aliases.txt"));
+                TextureFingerprint.Load(Path.Combine(directory, "signatures.txt"), _replacementPngPaths.ContainsKey);
+
+                // Atlases recognised by picture earlier in this session keep their match.
+                foreach (var kvp in _fingerprintMatches)
+                {
+                    if (!_replacementPngPaths.ContainsKey(kvp.Key) &&
+                        _replacementPngPaths.TryGetValue(kvp.Value, out string matched))
+                        _replacementPngPaths[kvp.Key] = matched;
+                }
+
                 LocalizationPlugin.Log.LogInfo(
-                    $"Indexed {_replacementPngPaths.Count} texture keys from {files.Length} texture files ({aliases} via aliases).");
+                    $"Indexed {_replacementPngPaths.Count} texture keys from {files.Length} texture files; " +
+                    $"{TextureFingerprint.Count} atlases can also be recognised by picture.");
             }
 
             TextureLoadQueue.Start(Math.Max(1, Math.Min(8, LocalizationPlugin.TextureWorkerThreads.Value)));
@@ -310,15 +292,50 @@ namespace TGYHTurkishPatch
 
                 var tex = new Texture2D(ptr);
                 string name = tex.name;
-                if (string.IsNullOrEmpty(name) ||
-                    !_replacementPngPaths.TryGetValue(NormalizeName(name), out string path))
-                    continue;
+                if (string.IsNullOrEmpty(name)) continue;
+
+                string normalized = NormalizeName(name);
+                if (!_replacementPngPaths.TryGetValue(normalized, out string path))
+                {
+                    path = ResolveByFingerprint(tex, normalized);
+                    if (path == null) continue;
+                }
+                else if (LocalizationPlugin.VerboseLogging.Value &&
+                         TextureFingerprint.TryMeasure(tex, normalized, out double distance))
+                {
+                    LocalizationPlugin.Log.LogInfo($"[TEXTURE] Fingerprint check '{name}': distance {distance:0.00}");
+                }
 
                 _rejected.Remove(ptr);
                 var entry = new Tracked { Texture = tex, Name = name, PngPath = path };
                 _tracked[ptr] = entry;
                 Queue(entry);
             }
+        }
+
+        /// <summary>
+        /// An atlas whose name differs from a replacement only by its build-specific hash: use
+        /// that replacement if the loaded picture is the one it was made for.
+        /// </summary>
+        private static string ResolveByFingerprint(Texture2D tex, string normalizedName)
+        {
+            if (TextureFingerprint.Count == 0 || _fingerprintMisses.Contains(normalizedName)) return null;
+
+            string key = TextureFingerprint.FindMatch(tex, normalizedName, out double distance);
+            if (key == null || !_replacementPngPaths.TryGetValue(key, out string path))
+            {
+                _fingerprintMisses.Add(normalizedName);
+                if (!double.IsNaN(distance))
+                    LocalizationPlugin.Log.LogInfo(
+                        $"[TEXTURE] '{normalizedName}' resembles a replaced atlas by name but its picture differs (distance {distance:0.0}); left as is.");
+                return null;
+            }
+
+            _fingerprintMatches[normalizedName] = key;
+            _replacementPngPaths[normalizedName] = path;
+            LocalizationPlugin.Log.LogInfo(
+                $"[TEXTURE] '{normalizedName}' recognised as '{key}' by picture (distance {distance:0.00}).");
+            return path;
         }
 
         private static void Prune()
