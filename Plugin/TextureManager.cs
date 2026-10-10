@@ -132,6 +132,40 @@ namespace TGYHTurkishPatch
         }
 
         /// <summary>
+        /// Other builds of the game (macOS, other stores) give the same sprite atlas a different
+        /// hash suffix. aliases.txt lists "&lt;name in that build&gt; TAB &lt;texture file here&gt;" so
+        /// one set of files serves them all. Written by tools/build_texture_aliases.py.
+        /// </summary>
+        private static int LoadAliases(string file)
+        {
+            if (!File.Exists(file)) return 0;
+            int added = 0;
+            try
+            {
+                foreach (var raw in File.ReadAllLines(file))
+                {
+                    string line = raw.Trim();
+                    int tab = line.IndexOf('\t');
+                    if (line.Length == 0 || line[0] == '#' || tab <= 0) continue;
+
+                    string alias = NormalizeName(line.Substring(0, tab));
+                    string target = NormalizeName(line.Substring(tab + 1));
+                    if (alias.Length == 0 || _replacementPngPaths.ContainsKey(alias)) continue;
+                    if (_replacementPngPaths.TryGetValue(target, out string path))
+                    {
+                        _replacementPngPaths[alias] = path;
+                        added++;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LocalizationPlugin.Log.LogWarning($"[TEXTURE] Could not read aliases.txt: {ex.Message}");
+            }
+            return added;
+        }
+
+        /// <summary>
         /// (Re)builds the name -> PNG index. Only file names are read here; safe to call from
         /// plugin Load() and again for a hot reload.
         /// </summary>
@@ -191,8 +225,9 @@ namespace TGYHTurkishPatch
                     }
                 }
 
+                int aliases = LoadAliases(Path.Combine(directory, "aliases.txt"));
                 LocalizationPlugin.Log.LogInfo(
-                    $"Indexed {_replacementPngPaths.Count} texture keys from {files.Length} texture files.");
+                    $"Indexed {_replacementPngPaths.Count} texture keys from {files.Length} texture files ({aliases} via aliases).");
             }
 
             TextureLoadQueue.Start(Math.Max(1, Math.Min(8, LocalizationPlugin.TextureWorkerThreads.Value)));

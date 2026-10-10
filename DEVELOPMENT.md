@@ -108,6 +108,14 @@ BepInEx is not redistributed. The installers download the pinned build
 (`6.0.0-be.788`, see `BepInExBuild` in `Installer/PatchInstaller.cs` and `install.sh`) from
 builds.bepinex.dev, choosing win-x86, win-x64 or macos-x64 to match the game.
 
+### Other builds of the game (macOS, other stores)
+
+Sprite atlases are named `sactx-…-<hash>`, and the hash differs between builds even when the
+atlas is pixel-identical; the macOS build, for example, shares only 3 of 90 names with
+Windows. `python tools/build_texture_aliases.py "<other build>"` compares the two builds and
+writes `textures/aliases.txt` (`<name in the other build>` TAB `<texture file>`), which the
+plugin reads and `build_release.py` ships. Run it once per build you want to support.
+
 Prebuilt textures only fit the exact textures they were built against. After a game update,
 build the release again on the updated game; where a texture changed size or format the
 plugin logs a warning and leaves the original in place.

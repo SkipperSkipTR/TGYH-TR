@@ -85,6 +85,9 @@ if [ ! -f "$GAME_DIR/BepInEx/core/BepInEx.Unity.IL2CPP.dll" ]; then
         # The launcher script has to be told which app to start.
         app_name="$(basename "$APP")"
         sed -i.bak "s|^executable_name=.*|executable_name=\"$app_name\"|" "$GAME_DIR/run_bepinex.sh"
+        # BepInEx ships an x86_64-only .NET runtime, but its launcher prefers the arm64 half of
+        # a universal game on Apple Silicon. Make it start the x86_64 half (through Rosetta).
+        sed -i.bak 's|ARCHPREFERENCE="arm64,x86_64"|ARCHPREFERENCE="x86_64"|' "$GAME_DIR/run_bepinex.sh"
         rm -f "$GAME_DIR/run_bepinex.sh.bak"
         chmod +x "$GAME_DIR/run_bepinex.sh"
     fi
@@ -113,7 +116,7 @@ case "$FLAVOUR" in
     macos-x64)
         say "Oyunu şu betikle başlatın / start the game through:"
         say "    \"$GAME_DIR/run_bepinex.sh\""
-        say "Apple Silicon: BepInEx yalnızca x64 destekler; oyun Rosetta ile çalışmalıdır."
+        say "Apple Silicon: oyun Rosetta ile çalışır (softwareupdate --install-rosetta) / the game runs through Rosetta."
         ;;
 esac
 say "İlk açılış 1-2 dakika sürebilir / the first launch can take 1-2 minutes."
