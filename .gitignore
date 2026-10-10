@@ -1,0 +1,10 @@
+# Build output
+bin/
+obj/
+dist/
+__pycache__/
+*.user
+.vs/
+
+# Local leftovers from the old asset-replacement workflow
+_old/

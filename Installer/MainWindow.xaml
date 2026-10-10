@@ -1,0 +1,24 @@
+<Window x:Class="TGYH_TR_Installer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Thank Goodness You're Here! Türkçe Yama" Height="330" Width="520"
+        Icon="icon.ico" ResizeMode="CanMinimize" WindowStartupLocation="CenterScreen">
+    <Grid>
+        <StackPanel Margin="20">
+            <TextBlock Text="Oyunun .exe Dosyasını Seçin:" Margin="0,0,0,5"/>
+            <Button Name="SelectGameFolderButton" Content="Oyun Klasörünü Seçin" Click="SelectGameFolder_Click" Height="30"/>
+            <TextBlock Name="FolderText" Text="" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" Foreground="Gray"/>
+            <TextBlock Name="InfoText" Text="" Margin="0,4,0,0" TextWrapping="Wrap"/>
+
+            <ProgressBar Name="ProgressBar" Height="20" Margin="0,12,0,4" Minimum="0" Maximum="100" Value="0"/>
+            <TextBlock Text="{Binding Value, ElementName=ProgressBar, StringFormat=\{0:0\}%}" TextAlignment="Center" FontWeight="Bold" HorizontalAlignment="Center"/>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                <Button Name="InstallButton" Content="Yamayı Yükle" Click="Install_Click" Width="120" Height="30" IsEnabled="False" Margin="5"/>
+                <Button Name="UninstallButton" Content="Yamayı Sil" Click="Uninstall_Click" Width="120" Height="30" IsEnabled="False" Margin="5"/>
+            </StackPanel>
+
+            <TextBlock Name="StatusText" Text="Durum: Seçim bekleniyor..." Margin="0,10,0,0" TextWrapping="Wrap"/>
+        </StackPanel>
+    </Grid>
+</Window>
