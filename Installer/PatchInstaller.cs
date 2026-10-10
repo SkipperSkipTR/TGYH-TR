@@ -133,6 +133,7 @@ namespace TGYH_TR_Installer
 
             if (!state.BepInExInstalled)
                 await InstallBepInExAsync(state.Is64Bit).ConfigureAwait(false);
+            EnsureBepInExConfig();
 
             string package = LocalPackage;
             bool downloaded = false;
@@ -223,13 +224,30 @@ namespace TGYH_TR_Installer
             File.WriteAllText(InGame("BepInEx", OwnershipMarker),
                 "BepInEx was installed by the TGYH Turkish patch installer; uninstalling the patch removes it.\r\n");
 
-            // BepInEx opens a console window by default. It fills in every other setting itself.
+        }
+
+        /// <summary>
+        /// Two BepInEx defaults have to be off for this game. Forwarding Unity's log makes
+        /// BepInEx inject a class into the game, which crashes it at startup ("Class::Init
+        /// signatures have been exhausted" followed by an access violation). And players
+        /// shouldn't get a console window. BepInEx fills in every setting not written here.
+        /// </summary>
+        private void EnsureBepInExConfig()
+        {
             string config = InGame("BepInEx", "config", "BepInEx.cfg");
             if (!File.Exists(config))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(config));
-                File.WriteAllText(config, "[Logging.Console]\r\n\r\nEnabled = false\r\n");
+                File.WriteAllText(config,
+                    "[Logging]\r\n\r\nUnityLogListening = false\r\n\r\n[Logging.Console]\r\n\r\nEnabled = false\r\n");
+                return;
             }
+
+            // An existing file (BepInEx already ran once, or the player's own): only the crashing setting.
+            string text = File.ReadAllText(config);
+            string updated = Regex.Replace(text, @"^(\s*UnityLogListening\s*=\s*)true\s*$", "${1}false",
+                RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            if (updated != text) File.WriteAllText(config, updated);
         }
 
         /// <summary>Finds the newest release carrying a plugin package and downloads it.</summary>

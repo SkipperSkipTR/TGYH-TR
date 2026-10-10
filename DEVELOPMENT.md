@@ -108,6 +108,12 @@ BepInEx is not redistributed. The installers download the pinned build
 (`6.0.0-be.788`, see `BepInExBuild` in `Installer/PatchInstaller.cs` and `install.sh`) from
 builds.bepinex.dev, choosing win-x86, win-x64 or macos-x64 to match the game.
 
+The installers also set `UnityLogListening = false` in `BepInEx/config/BepInEx.cfg`. With
+BepInEx's default (`true`) it injects a class into the game to forward Unity's log, and on
+this game that crashes at startup: the log ends with "Class::Init signatures have been
+exhausted, using a substitute!" and `ErrorLog.log` shows an access violation. For the same
+reason the plugin must not use Il2CppInterop class injection or delegate conversion.
+
 ### Other builds of the game (macOS, other stores)
 
 Sprite atlases are named `sactx-…-<hash>`, and the hash differs between builds even when the

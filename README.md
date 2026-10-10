@@ -47,7 +47,17 @@ Betik BepInEx'in macOS sürümünü kurar ve oyunun `run_bepinex.sh` ile başlat
 
 1. Oyununuza uygun [BepInEx 6 (Unity IL2CPP)](https://builds.bepinex.dev/projects/bepinex_be)
    sürümünü oyun klasörüne çıkarın (Windows sürümü 32 bit olduğu için `win-x86`).
-2. [Son sürümdeki](https://github.com/SkipperSkipTR/TGYH-TR/releases) `TGYHTurkishPatch-v*.zip`
+2. Oyun klasöründe `BepInEx/config/BepInEx.cfg` dosyasını şu içerikle oluşturun (dosya varsa
+   `UnityLogListening` değerini `false` yapın). **Bu ayar olmadan oyun açılışta çöker.**
+
+   ```ini
+   [Logging]
+   UnityLogListening = false
+
+   [Logging.Console]
+   Enabled = false
+   ```
+3. [Son sürümdeki](https://github.com/SkipperSkipTR/TGYH-TR/releases) `TGYHTurkishPatch-v*.zip`
    dosyasını oyun klasörüne çıkarın.
 
 ## Kaldırma
@@ -58,6 +68,9 @@ BepInEx'i kurulum aracı kurduysa o da kaldırılır; kendi kurduğunuz BepInEx'
 ## Sorun giderme
 
 - **Oyun ilk açılışta siyah ekranda bekliyor:** Normal; 1-2 dakika bekleyin.
+- **Oyun açılır açılmaz kapanıyor, günlükte "Class::Init signatures have been exhausted"
+  yazıyor:** `BepInEx/config/BepInEx.cfg` içinde `UnityLogListening = false` olmalı. Kurulum
+  aracını yeniden çalıştırmak bunu düzeltir.
 - **Yazılar İngilizce:** *Ayarlar > Dil* menüsünden ilk seçenek olan Türkçe'yi seçin.
 - **Yama çalışmıyor:** Oyun klasöründeki `BepInEx/LogOutput.log` dosyasıyla birlikte bir
   [sorun kaydı](https://github.com/SkipperSkipTR/TGYH-TR/issues) açın.

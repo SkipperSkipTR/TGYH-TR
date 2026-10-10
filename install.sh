@@ -76,10 +76,6 @@ if [ ! -f "$GAME_DIR/BepInEx/core/BepInEx.Unity.IL2CPP.dll" ]; then
     [ -f "$GAME_DIR/BepInEx/core/BepInEx.Unity.IL2CPP.dll" ] || die "BepInEx paketi beklenen dosyaları içermiyor / unexpected BepInEx package"
     echo "BepInEx was installed by the TGYH Turkish patch installer; uninstalling the patch removes it." > "$GAME_DIR/BepInEx/$MARKER"
 
-    if [ ! -f "$GAME_DIR/BepInEx/config/BepInEx.cfg" ]; then
-        mkdir -p "$GAME_DIR/BepInEx/config"
-        printf '[Logging.Console]\n\nEnabled = false\n' > "$GAME_DIR/BepInEx/config/BepInEx.cfg"
-    fi
 
     if [ "$FLAVOUR" = "macos-x64" ] && [ -f "$GAME_DIR/run_bepinex.sh" ]; then
         # The launcher script has to be told which app to start.
@@ -91,6 +87,17 @@ if [ ! -f "$GAME_DIR/BepInEx/core/BepInEx.Unity.IL2CPP.dll" ]; then
         rm -f "$GAME_DIR/run_bepinex.sh.bak"
         chmod +x "$GAME_DIR/run_bepinex.sh"
     fi
+fi
+
+# Two BepInEx defaults have to be off for this game: forwarding Unity's log crashes it at
+# startup ("Class::Init signatures have been exhausted"), and players don't need a console.
+CFG="$GAME_DIR/BepInEx/config/BepInEx.cfg"
+if [ ! -f "$CFG" ]; then
+    mkdir -p "$GAME_DIR/BepInEx/config"
+    printf '[Logging]\n\nUnityLogListening = false\n\n[Logging.Console]\n\nEnabled = false\n' > "$CFG"
+else
+    sed -i.bak 's/^\([[:space:]]*UnityLogListening[[:space:]]*=[[:space:]]*\)true[[:space:]]*$/\1false/' "$CFG"
+    rm -f "$CFG.bak"
 fi
 
 # --- Patch package --------------------------------------------------------------------
