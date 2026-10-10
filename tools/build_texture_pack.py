@@ -7,7 +7,7 @@ BepInEx/plugins/TGYHTurkishPatch/textures/ instead of the PNGs: players' machine
 read and upload them, with no PNG decoding or DXT encoding.
 
     python build_texture_pack.py                # build the pack into dist/textures
-    python build_texture_pack.py --signatures   # only write signatures.txt next to the PNGs
+    python build_texture_pack.py --signatures   # only write signatures.txt and sprites.txt next to the PNGs
 
 build_release.py runs this as part of making a release.
 
@@ -19,10 +19,13 @@ import shutil
 import subprocess
 import sys
 import base64
+import collections
 import tempfile
 
 import UnityPy
 from PIL import Image
+
+import sprite_outlines
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -106,53 +109,122 @@ def write_signatures(signatures, directory):
             fh.write(f"{name}\t{base64.b64encode(sig).decode('ascii')}\n")
 
 
+def file_key(texture_name):
+    """A texture name the way it appears as a file name in the textures folder."""
+    return re.sub(r'[<>:"/\\|?*]', "_", texture_name).strip().lower()
+
+
+class Plan:
+    def __init__(self):
+        self.manifest = []       # lines for TextureBuilder
+        self.skipped = []        # (png, reason): shipped as PNG
+        self.signatures = {}     # texture file name -> fingerprint of the original
+        self.sprite_lines = []   # sprites.txt
+        self.png_count = 0
+        self.name_count = 0
+        self.outline_report = [] # (texture, uncovered pixels, recovered pixels)
+
+
 def plan():
-    """Works out what to build: (manifest lines, PNGs to ship as-is, fingerprints, PNG count, name count)."""
+    """Works out what to build from the PNGs in the installed plugin folder."""
+    result = Plan()
     pngs = [os.path.join(root, f) for root, _, files in os.walk(TEX_DIR) for f in files if f.lower().endswith(".png")]
     # Same order as the plugin's index: the last PNG for a name is the one the game shows.
     pngs.sort(key=lambda p: (folder_priority(p), p))
     winners = {}
     for p in pngs:
         winners[clean_name(os.path.basename(p)[:-4]).lower()] = p
+    result.png_count, result.name_count = len(pngs), len(winners)
 
-    by_key, skipped = {}, []
+    by_key = {}
     for p in winners.values():
         key = source_key(os.path.basename(p)[:-4])
         if key:
             by_key[key] = p
         else:
-            skipped.append((p, "file name has no -CAB-/-sharedassets source suffix"))
+            result.skipped.append((p, "file name has no -CAB-/-sharedassets source suffix"))
 
     sources = [os.path.join(BUNDLES_DIR, f) for f in sorted(os.listdir(BUNDLES_DIR))]
-    sources += [os.path.join(DATA_DIR, f) for f in sorted(os.listdir(DATA_DIR)) if f.endswith(".assets")]
+    sources += [os.path.join(DATA_DIR, f) for f in sorted(os.listdir(DATA_DIR))
+                if f.endswith(".assets") or re.fullmatch(r"level\d+", f)]
 
-    manifest, seen, signatures = [], set(), {}
+    seen = set()
+    originals = {}                              # texture file name -> (Texture2D, png)
+    sprites = collections.defaultdict(dict)     # texture file name -> {(name, rect): SpriteInfo}
     for path in sources:
-        for obj in UnityPy.load(path).objects:
-            if obj.type.name != "Texture2D":
-                continue
-            key = (os.path.basename(obj.assets_file.name), obj.path_id)
-            if key not in by_key or key in seen:
-                continue
-            seen.add(key)
-            tex = obj.read()
-            png = by_key[key]
-            raw = RAW_FORMAT.get(int(tex.m_TextureFormat))
-            if raw is None or tex.m_MipCount != 1:
-                skipped.append((png, f"format {tex.m_TextureFormat} / {tex.m_MipCount} mips needs the PNG"))
-                continue
-            name = clean_name(os.path.basename(png)[:-4])
-            manifest.append("\t".join([png, str(tex.m_Width), str(tex.m_Height), str(raw), name + ".tgyc"]))
-            if can_fingerprint(name, tex.m_Width, tex.m_Height):
-                signatures[name] = signature(tex.image)
-    skipped += [(p, "original texture not found in the game data") for k, p in by_key.items() if k not in seen]
-    return manifest, skipped, signatures, len(pngs), len(winners)
+        try:
+            env = UnityPy.load(path)
+        except Exception:
+            continue
+        for obj in env.objects:
+            if obj.type.name == "Texture2D":
+                key = (os.path.basename(obj.assets_file.name), obj.path_id)
+                if key not in by_key or key in seen:
+                    continue
+                seen.add(key)
+                tex = obj.read()
+                png = by_key[key]
+                raw = RAW_FORMAT.get(int(tex.m_TextureFormat))
+                if raw is None or tex.m_MipCount != 1:
+                    result.skipped.append((png, f"format {tex.m_TextureFormat} / {tex.m_MipCount} mips needs the PNG"))
+                    continue
+                name = clean_name(os.path.basename(png)[:-4])
+                result.manifest.append("\t".join([png, str(tex.m_Width), str(tex.m_Height), str(raw), name + ".tgyc"]))
+                originals[name.lower()] = (tex, png, name)
+            elif obj.type.name == "Sprite":
+                try:
+                    sprite = obj.read()
+                    texture, info = sprite_outlines.read_sprite(sprite, obj.version)
+                except Exception:
+                    continue
+                tkey = file_key(texture.m_Name)
+                if tkey in winners:
+                    sprites[tkey].setdefault((info.name, tuple(round(v) for v in info.rect)), info)
+    result.skipped += [(p, "original texture not found in the game data") for k, p in by_key.items() if k not in seen]
+
+    for tkey, (tex, png, name) in sorted(originals.items()):
+        original = tex.image.convert("RGBA")
+        if can_fingerprint(name, tex.m_Width, tex.m_Height):
+            result.signatures[name] = signature(original)
+        if tkey not in sprites:
+            continue
+        replacement = Image.open(png).convert("RGBA")
+        if replacement.size != original.size:
+            continue
+        fixes, uncovered, recovered = sprite_outlines.find_fixes(original, replacement, list(sprites[tkey].values()))
+        if uncovered:
+            result.outline_report.append((name, uncovered, recovered))
+        for sprite, rectangles in fixes:
+            result.sprite_lines.append(sprite_outlines.format_line(name, tex.m_Height, sprite, rectangles))
+    return result
+
+
+def write_sprite_outlines(lines, directory):
+    with open(os.path.join(directory, "sprites.txt"), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("# Sprites whose mesh is widened so repainted artwork outside the original outline is drawn.\n")
+        fh.write("# <texture file> TAB <sprite> TAB <mesh bounds> TAB <extra rectangles>; texture pixels, origin bottom left\n")
+        fh.write("# Generated by tools/build_texture_pack.py\n")
+        for line in sorted(lines):
+            fh.write(line + "\n")
+
+
+def print_outline_report(result):
+    uncovered = sum(r[1] for r in result.outline_report)
+    recovered = sum(r[2] for r in result.outline_report)
+    if not uncovered:
+        return
+    print(f"Repainted pixels outside every sprite outline: {uncovered}; "
+          f"{recovered} now drawn by widening {len(result.sprite_lines)} sprites, {uncovered - recovered} still hidden.")
+    for name, total, got in sorted(result.outline_report, key=lambda r: r[2] - r[1])[:8]:
+        if total - got:
+            print(f"   still hidden: {total - got:6d} px in {name}")
 
 
 def build(out_dir=OUT_DIR):
     """Encodes the pack into out_dir; returns the builder's exit code (0 = everything built)."""
-    manifest, skipped, signatures, png_count, name_count = plan()
-    print(f"{png_count} PNGs -> {name_count} texture names -> {len(manifest)} to build, {len(signatures)} fingerprints")
+    planned = plan()
+    manifest, skipped, signatures = planned.manifest, planned.skipped, planned.signatures
+    print(f"{planned.png_count} PNGs -> {planned.name_count} texture names -> {len(manifest)} to build, {len(signatures)} fingerprints")
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
@@ -170,6 +242,8 @@ def build(out_dir=OUT_DIR):
         shutil.copy2(png, out_dir)
 
     write_signatures(signatures, out_dir)
+    write_sprite_outlines(planned.sprite_lines, out_dir)
+    print_outline_report(planned)
     print(f"Pack written to {out_dir}")
     return result.returncode
 
@@ -177,7 +251,10 @@ def build(out_dir=OUT_DIR):
 if __name__ == "__main__":
     if "--signatures" in sys.argv:
         # Only (re)write signatures.txt next to the PNGs in the installed plugin folder.
-        write_signatures(plan()[2], TEX_DIR)
-        print(f"Wrote {os.path.join(TEX_DIR, 'signatures.txt')}")
+        result = plan()
+        write_signatures(result.signatures, TEX_DIR)
+        write_sprite_outlines(result.sprite_lines, TEX_DIR)
+        print_outline_report(result)
+        print(f"Wrote signatures.txt and sprites.txt to {TEX_DIR}")
     else:
         sys.exit(build())

@@ -27,6 +27,7 @@ namespace TGYHTurkishPatch
             public Texture2D Texture;
             public string Name;
             public string PngPath;
+            public string Key;          // the replacement's texture name
             public Texture2D Backup;
             public bool BackupTried;
             public TextureState State;
@@ -36,6 +37,7 @@ namespace TGYHTurkishPatch
         private const double ApplyBudgetMs = 6.0;
         // Every Nth scan also drops destroyed textures and forgets which pointers were rejected.
         private const int ScansPerPrune = 50;
+        private const int ScansPerSpriteScan = 5;
         private const string BackupName = "TGY_OriginalBackup";
 
         private static readonly Dictionary<string, string> _replacementPngPaths =
@@ -57,6 +59,7 @@ namespace TGYHTurkishPatch
         private static long _scanIntervalMs = 100;
         private static long _nextScanAt;
         private static int _scansSincePrune;
+        private static int _scansSinceSprites;
         private static bool _scanRequested;
         private static bool _copyTextureChecked;
         private static bool _copyTextureSupported;
@@ -161,6 +164,7 @@ namespace TGYHTurkishPatch
             }
 
             TextureLoadQueue.CancelAll();
+            SpriteOutlines.RestoreAll();
             _replacementPngPaths.Clear();
             _fingerprintMisses.Clear();
 
@@ -198,6 +202,7 @@ namespace TGYHTurkishPatch
                 }
 
                 TextureFingerprint.Load(Path.Combine(directory, "signatures.txt"), _replacementPngPaths.ContainsKey);
+                SpriteOutlines.Load(Path.Combine(directory, "sprites.txt"));
 
                 // Atlases recognised by picture earlier in this session keep their match.
                 foreach (var kvp in _fingerprintMatches)
@@ -209,7 +214,7 @@ namespace TGYHTurkishPatch
 
                 LocalizationPlugin.Log.LogInfo(
                     $"Indexed {_replacementPngPaths.Count} texture keys from {files.Length} texture files; " +
-                    $"{TextureFingerprint.Count} atlases can also be recognised by picture.");
+                    $"{TextureFingerprint.Count} atlases can also be recognised by picture, {SpriteOutlines.Count} sprites get a wider mesh.");
             }
 
             TextureLoadQueue.Start(Math.Max(1, Math.Min(8, LocalizationPlugin.TextureWorkerThreads.Value)));
@@ -233,6 +238,7 @@ namespace TGYHTurkishPatch
                 if (_replacementPngPaths.TryGetValue(NormalizeName(entry.Name), out string path))
                 {
                     entry.PngPath = path;
+                    entry.Key = KeyOfFile(path);
                     if (LocalizationPlugin.IsTurkishActive) Queue(entry);
                 }
                 else
@@ -307,10 +313,32 @@ namespace TGYHTurkishPatch
                 }
 
                 _rejected.Remove(ptr);
-                var entry = new Tracked { Texture = tex, Name = name, PngPath = path };
+                var entry = new Tracked { Texture = tex, Name = name, PngPath = path, Key = KeyOfFile(path) };
                 _tracked[ptr] = entry;
                 Queue(entry);
+                // Sprites checked before their texture was known deserve another look.
+                if (SpriteOutlines.HasFixes(entry.Key)) SpriteOutlines.Rescan();
             }
+
+            // Sprites are far more numerous than textures; look for new ones less often.
+            if (SpriteOutlines.Count > 0 && ++_scansSinceSprites >= ScansPerSpriteScan)
+            {
+                _scansSinceSprites = 0;
+                SpriteOutlines.Scan(_keyOfTexture);
+            }
+        }
+
+        private static readonly Func<IntPtr, string> _keyOfTexture = KeyOfTexture;
+
+        private static string KeyOfTexture(IntPtr texture)
+        {
+            return _tracked.TryGetValue(texture, out var entry) && entry.State != TextureState.Failed ? entry.Key : null;
+        }
+
+        /// <summary>"…\Name-CAB-hash-id.png" -> "Name", the name the game knows the texture by.</summary>
+        private static string KeyOfFile(string path)
+        {
+            return NormalizeName(ExtractCleanTextureName(Path.GetFileNameWithoutExtension(path)));
         }
 
         /// <summary>
@@ -348,6 +376,7 @@ namespace TGYHTurkishPatch
             foreach (var kvp in _tracked)
                 if (!IsAlive(kvp.Value.Texture)) _scratch.Add(kvp.Key);
             foreach (var ptr in _scratch) Forget(ptr);
+            SpriteOutlines.Prune();
         }
 
         private static void Forget(IntPtr ptr)
@@ -674,6 +703,7 @@ namespace TGYHTurkishPatch
         public static void RestoreOriginalTextures()
         {
             TextureLoadQueue.CancelAll();
+            SpriteOutlines.RestoreAll();
 
             int restored = 0, stuck = 0;
             foreach (var entry in _tracked.Values)
@@ -701,6 +731,7 @@ namespace TGYHTurkishPatch
                 queued++;
             }
             _scanRequested = true;
+            SpriteOutlines.Rescan();
             if (queued > 0)
                 LocalizationPlugin.Log.LogInfo($"[TEXTURE] Re-applying {queued} modded textures.");
         }

@@ -58,6 +58,14 @@ somewhere else, add `-p:GameDir="<game folder>"`.
   polled a few times a second; a match is prepared on a background thread and uploaded on the
   main thread. PNGs are encoded into the texture's own GPU format on first use and cached in
   `cache/`; `.tgyc` files are already in that format and need no work on the player's machine.
+- **Sprite outlines** — the game draws each sprite through a tight outline mesh around its
+  original artwork, so translated text painted slightly outside that outline is in the
+  texture but never drawn. `build_texture_pack.py` compares each PNG with the original,
+  finds repainted pixels no sprite outline covers, and writes extra rectangles for the
+  sprite they belong to into `textures/sprites.txt`. The plugin appends them to the sprite's
+  mesh (`Sprite.OverrideGeometry`) and removes them when Turkish is switched off. Two cases
+  cannot be recovered and are listed at the end of a build: pixels painted outside the
+  sprite's own rectangle in the atlas, and pixels touching another sprite's artwork.
 - **Videos** — a VideoPlayer whose clip (or GameObject) name matches a file in `videos/` is
   redirected to that file.
 - **Font** — the TMP_FontAsset from the bundle replaces the game's fonts while Turkish is
@@ -129,7 +137,8 @@ picture:
   and the log says so.
 
 Nothing has to be generated per build. While editing with PNGs, run
-`python tools/build_texture_pack.py --signatures` to (re)write `signatures.txt` next to them.
+`python tools/build_texture_pack.py --signatures` to (re)write `signatures.txt` and `sprites.txt`
+next to them.
 
 A replacement still needs the atlas to have the same size, format and layout as the one it
 was made from. After a game update that repacks atlases, build the release again on the
